@@ -1,4 +1,5 @@
 (import ./types ./database)
+(export #t (import: ./types))
 
 (def (login-user username password)
   (def tbl (authenticate username password))

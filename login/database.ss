@@ -1,4 +1,4 @@
-(import ./conf :std/text/json)
+(import ./conf :std/text/json :std/db/dbi :std/db/postgresql)
 (export #t)
 
 (def (database-connect)

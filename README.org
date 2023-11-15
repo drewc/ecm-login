@@ -5,8 +5,8 @@ Backwards compatible!
 
 * Main Binary
 
-#+begin_src scheme tangle ./login.ss
-  (import ./login/handler)
+#+begin_src scheme :tangle login.ss
+  (import ./login/handler ./login/conf :std/getopt)
   (export main)
 
   (def (main . args)
@@ -21,25 +21,27 @@ Backwards compatible!
     (run (hash-ref opt 'address)))
 
   (def (run address)
+    (update-conf)
     (set! login-server (run-login-server address))
-    login-server)
+    (thread-join! login-server))
 
 #+end_src
 
 * Build
 
 #+begin_src scheme :tangle ./build.ss :shebang #!/usr/bin/env gxi
-  ;; -*- Gerbil -*-
+    ;; -*- Gerbil -*-
 
-  (import :std/build-script)
+    (import :std/build-script)
 
-  (defbuild-script
-    '("login/conf"
-    ;  "login/database"
-     ; "login/types"
-     ; "login/api"
-     ; "login/hander"
-     #; (exe: "login")))
+    (defbuild-script
+      '("login/conf"
+        "login/database"
+        "login/types"
+        "login/api"
+        "login/handler"
+         (exe: "login")
+  ))
 #+end_src
 
 * Package
@@ -54,7 +56,7 @@ Backwards compatible!
 #+begin_src scheme :tangle ./login/handler.ss
   (import :std/net/httpd :std/misc/ports
   	:std/db/postgresql :std/db/dbi
-  	:std/net/uri
+  	:std/net/uri :std/text/utf8
 
   	:drewc/ftw/httpd/cookies)
   (import ./api)
@@ -86,7 +88,7 @@ Backwards compatible!
         (http-response-write res 302 `(("Location" . ,(string-append "/ecm/login?_f&q=" q))) #f))))
 
   (def (login-handler req res)
-    (set! dbg req)
+    ;;(set! dbg req)
     (if (equal? 'POST (http-request-method req))
       (login/POST req res)
     (http-response-file
@@ -117,6 +119,7 @@ Backwards compatible!
 
 #+begin_src scheme :tangle ./login/api.ss
   (import ./types ./database)
+  (export #t (import: ./types))
 
   (def (login-user username password)
     (def tbl (authenticate username password))
@@ -161,7 +164,7 @@ Backwards compatible!
 * Database
 
 #+begin_src scheme :tangle login/database.ss 
-  (import ./conf :std/text/json)
+  (import ./conf :std/text/json :std/db/dbi :std/db/postgresql)
   (export #t)
 
   (def (database-connect)
@@ -192,6 +195,7 @@ in =~/.ecm/json=.
 
 #+begin_src scheme :tangle login/conf.ss
   (import :std/text/json)
+  (export #t)
 
   (def conf #f)
 

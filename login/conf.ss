@@ -1,4 +1,5 @@
 (import :std/text/json)
+(export #t)
 
 (def conf #f)
 

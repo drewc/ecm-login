@@ -1,6 +1,6 @@
 (import :std/net/httpd :std/misc/ports
 	:std/db/postgresql :std/db/dbi
-	:std/net/uri
+	:std/net/uri :std/text/utf8
 
 	:drewc/ftw/httpd/cookies)
 (import ./api)
@@ -32,7 +32,7 @@
       (http-response-write res 302 `(("Location" . ,(string-append "/ecm/login?_f&q=" q))) #f))))
 
 (def (login-handler req res)
-  (set! dbg req)
+  ;;(set! dbg req)
   (if (equal? 'POST (http-request-method req))
     (login/POST req res)
   (http-response-file
