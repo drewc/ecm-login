@@ -2,7 +2,8 @@
 	:std/db/postgresql :std/db/dbi
 	:std/net/uri :std/text/utf8
 
-	:drewc/ftw/httpd/cookies)
+	#;:drewc/ftw/httpd/cookies)
+
 (import ./api)
 (export #t)
 
