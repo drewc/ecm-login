@@ -9,5 +9,6 @@
       "login/types"
       "login/api"
       "login/handler"
+      "login/reset-password"
        (exe: "login")
 ))

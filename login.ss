@@ -1,4 +1,4 @@
-(import ./login/handler ./login/conf :std/getopt)
+(import ./login/handler ./login/reset-password ./login/conf :std/getopt)
 (export main)
 
 (def (main . args)
