@@ -11,4 +11,7 @@
       "login/handler"
       "login/reset-password"
        (exe: "login")
+      "user/database/interface"
+      "user/database/pool"
+      "user/database"
 ))
