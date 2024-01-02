@@ -9,493 +9,30 @@ needs.  Backwards compatible!
 :TOC:      :include siblings :depth 3 :ignore (this)
 :END:
 :CONTENTS:
+- [[#the-user-abstraction][The User abstraction]]
+- [[#the-login-server][The Login server]]
 - [[#hacking][HACKING]]
-- [[#main-binary][Main Binary]]
+- [[#database][Database]]
 - [[#build][Build]]
 - [[#package][Package]]
-- [[#forgotreset-password-2fa-start][Forgot/Reset Password (2FA start)]]
-- [[#http-handler][http handler]]
-- [[#the-api][The API]]
-- [[#the-javascript][The JavaScript]]
-- [[#the-login-struct][The "login" struct]]
-- [[#database][Database]]
 - [[#configuration][Configuration]]
 :END:
 
 
-
-
-* HACKING
+* The =User= abstraction
 :PROPERTIES:
-:CUSTOM_ID: hacking
+:CUSTOM_ID: the-user-abstraction
 :END:
 
-#+begin_src scheme
-  (begin
-    (import :ecm/login/handler
-            :ecm/login/conf
-            :ecm/login/reset-password
-  	  :ecm/login/database :std/net/httpd :std/contract :std/net/httpd/mux)
-  (import
-    :std/pregexp :std/net/smtp :std/net/httpd/mux :std/net/httpd :std/net/uri
-    :std/contract :std/text/json :std/misc/ports :std/text/utf8
-    :ecm/login/database :ecm/login/handler)
-  (update-conf) (create-reset-token "me+ecm@drewc.ca"))
+In general all users are, well, users. So the supertype of user, which
+is not a superuser but a superclass as it were, is outlined [[file:User.org][Here]]
 
-
-
-  (def server (run-login-server "0.0.0.0:8080"))
-#+end_src
-
-
-* Database
+* The =Login= server
 :PROPERTIES:
-:CUSTOM_ID: database
+:CUSTOM_ID: the-login-server
 :END:
 
-There are many ways in which the interaction with the database is
-driven by users and it matters to the database!
-
-Because of that there's [[file:~/me/mnt/maxbakuntu/home/ecm/old-maxclaims/ecm/database/Database.org][a lot dedicated.]]
-
-
-* Main Binary
-:PROPERTIES:
-:CUSTOM_ID: main-binary
-:END:
-
-
-#+begin_src scheme :tangle login.ss
-  (import ./login/handler ./login/reset-password ./login/conf :std/getopt)
-  (export main)
-
-  (def (main . args)
-    (call-with-getopt ecm-login-main args
-      program: "login"
-      help: "A simple httpd login server"
-      (option 'address "-a" "--address"
-        help: "server address"
-        default: "127.0.0.1:8080")))
-
-  (def (ecm-login-main opt)
-    (run (hash-ref opt 'address)))
-
-  (def (run address)
-    (update-conf)
-    (set! login-server (run-login-server address))
-    (thread-join! login-server))
-
-#+end_src
-
-
-* Build
-:PROPERTIES:
-:CUSTOM_ID: build
-:END:
-
-#+begin_src scheme :tangle ./build.ss :shebang #!/usr/bin/env gxi
-    ;; -*- Gerbil -*-
-
-    (import :std/build-script)
-
-    (defbuild-script
-      '("login/conf"
-        "login/database"
-        "login/types"
-        "login/api"
-        "login/handler"
-        "login/reset-password"
-         (exe: "login")
-        "user/database/interface"
-        "user/database/pool"
-        "user/database"
-  ))
-#+end_src
-
-* Package
-:PROPERTIES:
-:CUSTOM_ID: package
-:END:
-
-#+begin_src scheme :tangle gerbil.pkg
-     (package: ecm
-      ;; depend: ("github.com/drewc/ftw")
-     )
-
-#+end_src
-
-* Forgot/Reset Password (2FA start)
-:PROPERTIES:
-:CUSTOM_ID: forgotreset-password-2fa-start
-:END:
-
-#+begin_src scheme :tangle login/reset-password.ss
- (import
-    :std/pregexp :std/net/smtp :std/net/httpd/mux :std/net/httpd :std/net/uri
-    :std/contract :std/text/json :std/misc/ports :std/text/utf8
-    :ecm/login/database :ecm/login/handler)
-  (export #t)
-
-  (def %reset-email-text "
-    <html> <body> <h3> ECM Password Reset Request</h3>
-    Hey NAME,<br>
-    <br>
-    Someone has requested a password reset for the user 'USER' on ECM.
-    <br> <br>
-    If it was not you please ignore this or report to an administrator.
-    <br> <br>
-    Otherwise, <a href=\"TOKEN\"> Click Here </a> to reset your password.
-    <br> <br>
-    Cheers,
-    <br> <br>
-    ECM System
-    </body> </html>")
-
-  (def (reset-email-text name user url)
-    (pregexp-replace
-     "NAME" (pregexp-replace
-  	   "USER"
-  	   (pregexp-replace "TOKEN" %reset-email-text url)
-  	   user)
-     name))
-
-  (def (send-reset-email
-        email-address (host "ecm.maxwellclaims.net")
-        (proto "https")
-        (smtp-host "maxbakuntu.lan:25"))
-    (def tok (create-reset-token email-address))
-    (match tok 
-      (#f tok)
-      ([name username token]
-       (let ((data [To: (string-append name " <"email-address">")
-  	              From: "ECM System"
-  	              Subject: "ECM Password Reset"
-  		      Content-Type: "text/html"
-  		      (reset-email-text
-  		       name username
-  		       (string-append proto "://" host "/ecm/login/reset?tok=" token))])
-  	   (smtp (smtp-connect smtp-host)))
-         (apply send-mail smtp "postfix@drewc.ca" email-address data)))))
-
-  (def (reset-json-handler req res)
-    (def ps (http-request-params req))
-    (def args (form-url-decode ps))
-    (def email (assget "email" args))
-    (def tok (send-reset-email email))
-    (display email)
-    (http-response-write
-     res 200 '(("Content-Type" . "application/json"))
-     (with-output-to-string "" (cut write-json tok))))
-
-  (def (reset-html token)
-    (def str (read-file-string (static-path-expand "reset-password.html")))
-    (pregexp-replace "TOKEN" str token))
-
-  (def (reset/POST req res)
-    (def bdy (http-request-body req))
-    (def tbl (call-with-input-u8vector bdy read-json))
-    (def tok (hash-ref tbl 'token))
-    (def pw (hash-ref tbl 'pw))
-    (def re (reset-password tok pw))
-    (http-response-write
-     res 200 '(("Content-Type" . "application/json"))
-     (with-output-to-string "" (cut write-json re))))
-     
-    
-  (def (reset-handler req res)
-    (if (eq? 'POST (http-request-method req))
-      (reset/POST req res)
-      (let ()
-        (def ps (http-request-params req))
-        (def args (form-url-decode ps))
-        (def tok (assget "tok" args))
-        (def str (reset-html tok))
-        (http-response-write
-         res 200 '(("Content-Type" . "text/html")) str))))
-
-  ;; http://localhost:8080/ecm/login/logo.jpg
-  (def (logo-handler _ res)
-    (http-response-file res '(("Content-Type" . "image/jpeg"))
-  		      (static-path-expand "logo.jpg")))
-
-  ;; http://localhost:8080/ecm/login/gerbil-logo.svg  
-  (def (gerbil-logo-handler _ res)
-    (http-response-file res '(("Content-Type" . "image/svg+xml"))
-  		      (static-path-expand "gerbil-logo.svg")))
-
-
-  (using (self login-mux :- static-http-mux)
-   (hash-put! self.t "/ecm/login/reset.json" (cut reset-json-handler <> <>))
-   (hash-put! self.t "/ecm/login/reset" (cut reset-handler <> <>))
-   (hash-put! self.t "/ecm/login/logo.jpg" (cut logo-handler <> <>))
-   (hash-put! self.t "/ecm/login/gerbil-logo.svg" (cut gerbil-logo-handler <> <>)))
-
-
-
-         
-         
-
-#+end_src
-
-
-* http handler
-:PROPERTIES:
-:CUSTOM_ID: http-handler
-:END:
-
-#+begin_src scheme :tangle ./login/handler.ss
-  (import :std/net/httpd :std/misc/ports
-  	:std/db/postgresql :std/db/dbi
-  	:std/net/uri :std/text/utf8
-
-  	#;:drewc/ftw/httpd/cookies)
-  
-  (import ./api)
-  (export #t)
-
-  (def current-static-path (make-parameter "/opt/ecm/user/static/"))
-  (def static-path-expand (cut path-expand <> (current-static-path)))
-
-
-  ;(def dbg #f)
-
-  (def (login/POST req res)
-    (let* ((params (form-url-decode (utf8->string (http-request-body req))))
-  	 (u (assget "u" params))
-  	 (pw (assget "p" params))
-  	 (keep (assget "keep" params))
-  	 (login (login-user u pw))
-  	 (getps (let ((ps (http-request-params req)))
-  		  (if ps (form-url-decode ps) [])))
-  	 (q (or (assget "q" getps) "/ecm/index")))
-      (if login 
-        (http-response-write
-  	res 200 `(("Content-Type" . "text/html")
-  		  ("Set-Cookie" . ,(string-append "ecm-login=" (login-id login))))
-  	 (string-append "<!DOCTYPE html>
-   <html><head><meta http-equiv=\"refresh\" content=\"0; url='"q"'\">
-   </head><body></body> </html>"))
-        
-        (http-response-write res 302 `(("Location" . ,(string-append "/ecm/login?_f&q=" q))) #f))))
-
-  (def (login-handler req res)
-    ;;(set! dbg req)
-    (if (equal? 'POST (http-request-method req))
-      (login/POST req res)
-    (http-response-file
-     res '(("Content-Type" . "text/html"))
-     (static-path-expand "login-dark.html"))))
-
-  (def (login.js req res)
-    (http-response-file
-     res '(("Content-Type" . "text/javascript"))
-     (static-path-expand "login.js")))
-
-
-  (def login-mux
-    (make-static-http-mux
-     (list->hash-table
-      `(("/ecm/login" .,(cut login-handler <> <>))
-        ("/ecm/login/login.js" .,(cut login.js <> <>))))
-     (cut login-handler <> <>)))
-
-  (def (run-login-server (address "10.42.1.100:8080"))
-    (start-http-server! address mux: login-mux))
-
-
-  (def login-server #f)
-#+end_src
-
-* The API
-:PROPERTIES:
-:CUSTOM_ID: the-api
-:END:
-
-#+begin_src scheme :tangle ./login/api.ss
-  (import ./types ./database)
-  (export #t (import: ./types))
-
-  (def (login-user username password)
-    (def tbl (authenticate username password))
-    (if (not tbl) tbl
-        (make-login
-         (hash-ref tbl 'id)
-         (hash-ref tbl 'user_id) username
-         (hash-ref tbl 'time) (hash-ref tbl 'until))))
-#+end_src
-
-
-* The JavaScript
-:PROPERTIES:
-:CUSTOM_ID: the-javascript
-:END:
- 
-#+begin_src js :tangle ./static/login.js
-  const ready = fn => document.readyState !== 'loading' ? fn() : document.addEventListener('DOMContentLoaded', fn);
-   // Example POST method implementation:
-
-  async function postDataReset(url = "", data = {}) {
-      // Default options are marked with *
-      const response = await fetch(url, {
-  	method: "POST", // *GET, POST, PUT, DELETE, etc.
-  	mode: "cors", // no-cors, *cors, same-origin
-  	cache: "no-cache", // *default, no-cache, reload, force-cache, only-if-cached
-  	//credentials: "same-origin", // include, *same-origin, omit
-  	headers: {
-  	    "Content-Type": "application/json",
-  	    // 'Content-Type': 'application/x-www-form-urlencoded',
-  	},
-  	//redirect: "follow", // manual, *follow, error
-  	//referrerPolicy: "no-referrer", // no-referrer, *no-referrer-when-downgrade, origin, origin-when-cross-origin, same-origin, strict-origin, strict-origin-when-cross-origin, unsafe-url
-  	body: JSON.stringify(data), // body data type must match "Content-Type" header
-      });
-
-      if (response.ok) {
-  	return response.json();
-      } else {
-  	return {
-  	    error: response.statusText,
-  	    status: response.status,
-  	    response: response
-  	}
-      }
-  }
-
-  function raiseUnknownError(obj) {
-      const ue = document.getElementById("UnknownError")
-
-      ue.hidden = false 
-      document.getElementById("resetForm").hidden = true
-      document.getElementById("resetSpinner").hidden = true
-
-      if (obj) {
-  	try {
-  	    ue.getElementsByTagName("code")[0].innerHTML = JSON.stringify(obj)
-  	} catch (e) {
-  	    console.error("Error in Raise:", e)
-  	}
-      }
-  }
-
-  function notifySuccess() {
-      document.getElementById("UnknownError").hidden = true
-      document.getElementById("resetForm").hidden = true
-      document.getElementById("resetSpinner").hidden = true
-
-      document.getElementById("resetSuccess").hidden = false
-  }
-
-  function send_reset_mail() {
-      const email = document.getElementById("recoverInput").value 
-      return fetch(`/ecm/login/reset.json?email=${encodeURIComponent(email)}`)
-  	.then(e => e.json())
-  }
-
-
-
-  function addRecoverListener() {
-      const form = document.getElementById("recoverForm");
-      if (!form) return;
-
-      const spin = document.getElementById("recoverSpinner"),
-  	  done = document.getElementById("recoverSuccess"),
-  	  nope = document.getElementById("recoverNotFound"),
-  	  ue = document.getElementById("UnknownError")
-
-      
-      form.addEventListener("submit", (e) => {
-  	e.preventDefault();
-
-  	spin.hidden = false
-  	form.hidden = true
-  	done.hidden = true
-  	nope.hidden = true
-  	
-  	try {
-  	    send_reset_mail().then(res => {
-  		console.log("Get results", res)
-  		spin.hidden = true
-  		res ? done.hidden = false : nope.hidden = false 
-  		
-  	    }).catch(e => {
-  		console.log("unknown error", e)
-  		spin.hidden = true
-  		ue.hidden = false
-  	    })
-  	    
-  	} catch(e) {
-  	    spin.hidden = true
-  	    ue.hidden = false
-              console.warn('caught', e)
-  	}
-           
-      })
-  }
-  	
-  ready(function() {
-      addRecoverListener()
-      
-      const form = document.getElementById("resetForm");
-      if (form) {
-  	
-  	console.log('reset form here')
-
-  	
-          form.addEventListener("submit", function (event) {
-    	    event.preventDefault();
-              const args = new FormData(form),
-    		  p = args.get("p"),
-    		  rp = args.get("rp"),
-    		  tok = args.get('token')
-
-              document.getElementById("Invalid").style.display =  (p !== rp) ? "block" : "none";
-
-    	    console.log('tok', tok, p, rp); 
-
-    	    if (p === rp) {
-  		const spin = document.getElementById("resetSpinner")
-  		spin.hidden=false
-  		form.hidden=true
-  		
-  		postDataReset("#", {
-  		    token: tok,
-  		    pw: p
-  		}).then(res => {
-  		    if (res.error) {
-  			raiseUnknownError(res)
-  		    } else {
-  			console.log("get legit object", res)
-  			notifySuccess()
-  			setTimeout(() => document.location.href='/', 3500)
-  		    }
-  		}).catch(e => {
-  		    raiseUnknownError()
-  		    console.error("Unknown:", e)
-  		})
-
-  		
-              }   
-              
-          })
-      }
-
-      const failure = new URLSearchParams(window.location.search).get("_f")
-      if (typeof failure == "string") {
-  	document.getElementById("Invalid").style.display = "block"
-      }
-  })
-
-#+end_src
-* The "login" struct
-:PROPERTIES:
-:CUSTOM_ID: the-login-struct
-:END:
-
-#+begin_src scheme tangle ./login/types.ss
-    (export #t (struct-out login))
-    (defstruct login (id user-id username effective expiry)
-      transparent: #t)
-#+end_src
+The idea is to keep it all in [[file:Login.org][one place.]]
 
 * Configuration
 :PROPERTIES:
@@ -524,3 +61,75 @@ in =~/.ecm/json=.
         res)))
 
 #+end_src
+
+
+* Database
+:PROPERTIES:
+:CUSTOM_ID: database
+:END:
+
+There are many ways in which the interaction with the database is
+driven by users and it matters to the database!
+
+Because of that there's [[file:Database.org][a lot dedicated.]]
+
+
+* Build
+:PROPERTIES:
+:CUSTOM_ID: build
+:END:
+
+#+begin_src scheme :tangle ./build.ss :shebang #!/usr/bin/env gxi
+    ;; -*- Gerbil -*-
+
+    (import :std/build-script)
+
+    (defbuild-script
+      '("login/conf"
+        "login/database"
+        "login/types"
+        "login/api"
+        "login/handler"
+        "login/reset-password"
+         (exe: "login")
+        "user/database/interface"
+        "user/database/pool"
+        "user/database"
+        "user/entity"
+  ))
+#+end_src
+
+* Package
+:PROPERTIES:
+:CUSTOM_ID: package
+:END:
+
+#+begin_src scheme :tangle gerbil.pkg
+     (package: ecm
+      ;; depend: ("github.com/drewc/ftw")
+     )
+
+#+end_src
+
+* HACKING
+:PROPERTIES:
+:CUSTOM_ID: hacking
+:END:
+
+#+begin_src scheme
+  (begin
+    (import :ecm/login/handler
+            :ecm/login/conf
+            :ecm/login/reset-password
+  	  :ecm/login/database :std/net/httpd :std/contract :std/net/httpd/mux)
+  (import
+    :std/pregexp :std/net/smtp :std/net/httpd/mux :std/net/httpd :std/net/uri
+    :std/contract :std/text/json :std/misc/ports :std/text/utf8
+    :ecm/login/database :ecm/login/handler)
+  (update-conf) (create-reset-token "me+ecm@drewc.ca"))
+
+
+
+  (def server (run-login-server "0.0.0.0:8080"))
+#+end_src
+

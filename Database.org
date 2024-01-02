@@ -6,18 +6,31 @@
 :TOC:      :include all :depth 2 :ignore (this)
 :END:
 :CONTENTS:
+- [[#usage][Usage]]
+- [[#ecmuserdatabase-module][:ecm/user/database module]]
+- [[#interface][Interface]]
 - [[#per-user-pools][Per User Pools]]
   - [[#function-database-connect-using-token][Function database-connect-using-token]]
+  - [[#variable-token-database-pools][Variable token-database-pools]]
+  - [[#function-make-token-conpooltok-max-connections][Function make-token-conpool(tok max-connections)]]
+  - [[#function-get-token-conpool][Function get-token-conpool]]
+  - [[#function-close-token-conpool][Function close-token-conpool]]
+  - [[#function-remove-token-conpool][Function remove-token-conpool]]
+  - [[#function-get-token-connectiontok][Function get-token-connection(tok)]]
+  - [[#function-call-with-token-connection][Function call-with-token-connection]]
 - [[#users-and-roles-united-here][Users and Roles: United here]]
 - [[#the-login-schema][The login. schema]]
-- [[#function-logintoken_role][Function login.token_role]]
-- [[#function-loginset_session_authorization][Function login.set_session_authorization]]
-- [[#function-loginset_role][Function login.set_role]]
-- [[#login-take][Login take]]
+  - [[#function-logintoken_role][Function login.token_role]]
+  - [[#function-loginset_session_authorization][Function login.set_session_authorization]]
+  - [[#function-loginset_role][Function login.set_role]]
+- [[#applcation-login-uses][Applcation Login uses]]
 - [[#hacking][HACKING]]
 :END:
 
 * Usage
+:PROPERTIES:
+:CUSTOM_ID: usage
+:END:
 
 In general a =token= is provided and =ECM= knows the user that token
 is assigned to.
@@ -26,19 +39,25 @@ There's a function, =call-with-token-connection=, that makes sure to
 recycle the connection as needed.
 
 #+begin_src scheme
-  (import :ecm/user/database/pool :std/db/dbi)
+  (import :ecm/user/database :std/db/dbi)
 
-  (call-with
+  (call-with-token-connection "ASDASDAD" ... )
 #+end_src
 
 
 * =:ecm/user/database= module
+:PROPERTIES:
+:CUSTOM_ID: ecmuserdatabase-module
+:END:
 #+begin_src scheme :tangle ./user/database.ss
   (import ./database/pool ./database/interface)
   (export (import: ./database/pool ./database/interface))
 #+end_src
 
 * Interface
+:PROPERTIES:
+:CUSTOM_ID: interface
+:END:
 
 #+begin_src scheme :tangle ./user/database/interface.ss
   (export #t)
@@ -92,6 +111,9 @@ We can get a role from a token that the front end gets as the login session [[#f
 #+end_src
 
 ** /Variable/ =token-database-pools=
+:PROPERTIES:
+:CUSTOM_ID: variable-token-database-pools
+:END:
 
 Every token gets a pool.
 
@@ -100,6 +122,9 @@ Every token gets a pool.
 #+end_src
 
 ** /Function/ =make-token-conpool(tok max-connections)=
+:PROPERTIES:
+:CUSTOM_ID: function-make-token-conpooltok-max-connections
+:END:
 
 #+begin_src scheme :tangle no
 > (make-token-conpool "4744e6c3-dad0-48b4-ba61-5024445b3dfd")
@@ -121,6 +146,9 @@ Every token gets a pool.
 #+end_src
 
 ** /Function/ =get-token-conpool=
+:PROPERTIES:
+:CUSTOM_ID: function-get-token-conpool
+:END:
 
 If there's a =conpool=, get it, otherwise =#f=
 
@@ -138,6 +166,9 @@ If there's a =conpool=, get it, otherwise =#f=
 #+end_src
 
 ** /Function/ =close-token-conpool=
+:PROPERTIES:
+:CUSTOM_ID: function-close-token-conpool
+:END:
 
 #+begin_src scheme
   (def (close-token-conpool tok)
@@ -147,6 +178,9 @@ If there's a =conpool=, get it, otherwise =#f=
 
 
 ** /Function/ =remove-token-conpool=
+:PROPERTIES:
+:CUSTOM_ID: function-remove-token-conpool
+:END:
 #+begin_src scheme
 
   (def (remove-token-conpool tok (close #t))
@@ -155,6 +189,9 @@ If there's a =conpool=, get it, otherwise =#f=
 #+end_src
 
 ** /Function/ =get-token-connection(tok)=
+:PROPERTIES:
+:CUSTOM_ID: function-get-token-connectiontok
+:END:
 
 #+begin_src scheme
   (def (get-token-connection tok (timeo 10) max: (max-connections 10))
@@ -168,6 +205,9 @@ If there's a =conpool=, get it, otherwise =#f=
 
 
 ** /Function/ =call-with-token-connection=
+:PROPERTIES:
+:CUSTOM_ID: function-call-with-token-connection
+:END:
 
 #+begin_src scheme
   (def (call-with-token-connection tok-or-args fn)
@@ -234,7 +274,8 @@ If there's a =conpool=, get it, otherwise =#f=
 :CUSTOM_ID: the-login-schema
 :END:
 
-There's a bunch I placed in this schema somewhere along the way. It's a useful "file name" I suppose.
+There's a bunch I placed in this schema somewhere along the way. It's
+a useful "file name" I suppose.
 
 ** /Function/ =login.token_role=
 :PROPERTIES:
@@ -305,7 +346,7 @@ this token.
 
 * Applcation Login uses 
 :PROPERTIES:
-:CUSTOM_ID: login-take
+:CUSTOM_ID: applcation-login-uses
 :END:
 #+begin_src scheme :tangle login/database.ss 
   (import ./conf :std/text/json :std/db/dbi :std/db/postgresql)

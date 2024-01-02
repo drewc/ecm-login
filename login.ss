@@ -14,5 +14,6 @@
 
 (def (run address)
   (update-conf)
+  (displayln "Running Binary on MacOS")
   (set! login-server (run-login-server address))
   (thread-join! login-server))
